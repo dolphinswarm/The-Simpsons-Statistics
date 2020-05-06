@@ -103,10 +103,9 @@ server <- function(input, output) {
     
     # ERROR RENDERING
     output$error <- renderText({
-        if (is.na(input$variability) | is.null(input$variability) | length(input) == 0) return()
-        
         # Do we have an invalid plot? If so, render the text
-        if ((input$plottype == "ratings_season" & input$season[1] == input$season[2] & input$variability == FALSE)) {
+        if (((input$plottype == "ratings_season" | input$plottype == "guest_stars") & 
+              input$season[1] == input$season[2] & input$variability == FALSE)) {
             "This plot type is invalid - please select a different plot!"
         }
     })
