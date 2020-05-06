@@ -15,9 +15,6 @@ library(TMDb)
 library(tidyverse)
 
 # ====================================================== 2.) Load Datasets
-# Set the working directory
-setwd("~/Classes (Spring 2020)/STA 404")
-
 # Get each season of the Simpsons
 seasons <- tv(api_key = "3d1b240ce44c8b72696e9a3c43e3f992", id = 456)$seasons
 seasons <- seasons %>%
@@ -85,11 +82,14 @@ ratings <- read_csv("simpsons_episodes.csv") %>%
   
 
 # ====================================================== 3.) Data Handling
-# Calculate the number of guest stars per episode
+# Calculate the number of guest stars per episode and season
 guest_stars <- guest_stars %>%
-  left_join(guest_stars %>%
-            group_by(season_num) %>%
-            summarize(total_guest_stars = n()))
+  left_join(tmp <- guest_stars %>%
+              group_by(season_num, episode_num) %>%
+              summarize(episode_guest_star_num = n()) %>%
+              ungroup() %>%
+              group_by(season_num) %>%
+              mutate(season_guest_star_num = sum(episode_guest_star_num)))
 
 # Add the number of episodes per season as a column
 episodes <- episodes %>%
@@ -107,9 +107,14 @@ simpsons_episodes <- episodes %>%
          guest_name = name.y.y,
          episode_title = name) %>%
   group_by(season_number) %>%
-  mutate(total_guest_stars = ifelse(is.na(total_guest_stars), max(total_guest_stars, na.rm = TRUE), total_guest_stars),
-         avg_guest_stars = round(total_guest_stars / season_episode_num, digits=2),
-         avg_season_rating = mean(imdb_rating))
+  mutate(episode_guest_star_num = ifelse(is.na(episode_guest_star_num), 0, episode_guest_star_num),
+         season_guest_star_num = ifelse(is.na(season_guest_star_num), max(season_guest_star_num, na.rm = TRUE), season_guest_star_num ),
+         avg_guest_stars = round(season_guest_star_num  / season_episode_num, digits=2),
+         avg_season_rating = round(mean(imdb_rating), digits=2))
 
+
+# ====================================================== 4.) Save Data
 # Save the dataset
+save(guest_stars, file="Simpsons_Episodes_Guest_Stars.RData")
+save(crew, file="Simpsons_Episodes_Crew.RData")
 save(simpsons_episodes, file="Simpsons_Episodes.RData")
