@@ -34,10 +34,15 @@ simpsons_episodes <- simpsons_episodes %>%
 plot_types <- c("Ratings Over Time (Per Season)" = "ratings_season",
                 "Ratings Over Time (Per Episode)" = "ratings_episode",
                 "Guest Stars Over Time (Per Season)" = "guest_stars",
-                "Most Popular Guest Stars" = "guest_star_pop",
-                "Most Frequent Guest Stars" = "guest_star_freq",
-                "Most Popular Directors" = "director_pop",
-                "Most Popular Writers" = "writer_pop")
+                "Guest Stars - More Info" = "guest_stars_extra",
+                "Writers - More Info" = "writers_extra",
+                "Directors - More Info" = "directors_extra")
+
+# Create a list of sorting variables
+extra_types <-c("Most Popular" = "popular_most",
+                "Least Popular" = "popular_least",
+                "Frequency" = "frequency",
+                "Popularity by Frequency" = "both")
 
 # ====================================================== 4.) Create shiny app
 ######
@@ -82,18 +87,18 @@ server <- function(input, output) {
     # DYNAMIC UI AREA RENDERING
     output$ui <- renderUI({
         
-        # If the ratings plot...
-        if (input$plottype == "ratings_season" || input$plottype == "guest_stars") {
+        # If a by-season plot...
+        if (input$plottype == "ratings_season" | input$plottype == "guest_stars") {
             
             # Checkbox for averaging by season
             checkboxInput(inputId = "variability", label="Show Variability?")
         }
-        # If the guest stars over time plot...
-        # else if () {
-        #     
-        #     # Checkbox for differentiating by season
-        #     checkboxInput(inputId = "correlatebyaveragerating", label="Correlate by Rating?")
-        # } 
+        # If an extra info plot
+        else if (input$plottype == "guest_stars_extra" | input$plottype == "writers_extra" | input$plottype == "directors_extra") {
+
+            # Selection menu for choosing plot
+            selectInput(inputId="extratype", label="Extra Type", choices = extra_types)
+        }
     })
     
     # ERROR RENDERING
@@ -275,8 +280,8 @@ server <- function(input, output) {
                     config(displayModeBar = F)
             }
             
-        # ====================================== 3.) Create a plot comparing guest stars per season
-        } else if (input$plottype == "guest_star_freq") {
+        # ====================================== 4.) Create a plot comparing guest stars per season
+        } else if (input$plottype == "guest_stars_extra") {
             
             # Create an on-the-fly dataset for finding the top viewers per season
             tmp_guest_star_data <- subset(simpsons_episodes, season_number >= input$season[1] & 
@@ -286,21 +291,588 @@ server <- function(input, output) {
                 group_by(guest_name) %>%
                 summarize(total_appearances = n(),
                           average_ratings = round(mean(imdb_rating),digits=2)) %>%
-                drop_na() %>%
-                mutate(overall_avg = mean(total_appearances)) %>%
-                filter(total_appearances > overall_avg)
+                drop_na()
             
             # Create the basic plot structure
-            plot_guest_stars_2 <- ggplot(tmp_guest_star_data) 
+            plot_guest_stars <- NULL
             
-            plot_guest_stars_2 <- plot_guest_stars_2 + 
-                geom_bar(aes(x=reorder(guest_name, -total_appearances), y=total_appearances,
-                               text=paste("Name:", guest_name,
-                                          "<br>Total Appearances:", total_appearances, 
-                                          "<br>Average Episode Rating:", average_ratings)), 
-                           stat="identity") +
-                labs(x="Guest Star", y="Total Appearances", caption="Source: TMDb Database") +
-                theme(axis.text.x=element_blank())
+            #  Plot popularity (most)
+            if (input$extratype == "popular_most") {
+                
+                # Combine rows of same popularity and filter top 12
+                tmp_guest_star_data <- tmp_guest_star_data %>% 
+                    group_by(average_ratings) %>%
+                    mutate(all_guests_of_rating = paste0(guest_name, collapse = "\n- ")) %>%
+                    ungroup() %>%
+                    select(all_guests_of_rating, average_ratings) %>%
+                    distinct() %>%
+                    top_n(n=12, wt=average_ratings)
+                
+                # Add to plot                
+                plot_guest_stars <- ggplot(tmp_guest_star_data) +
+                    geom_bar(aes(x=reorder(all_guests_of_rating, -average_ratings), y=average_ratings,
+                                 text=paste0("Guests:<br>- ", all_guests_of_rating,
+                                            "<br>Average Episode Rating of Guest Star: ", average_ratings)), 
+                             stat="identity") +
+                    labs(x="Guest Star", y="Average Episode Rating of Guest Star", caption="Source: TMDb Database") +
+                    theme(axis.text.x=element_blank())
+                
+                # ADJUST TITLE
+                # Seasons are not equal
+                if (input$season[1] != input$season[2]) {
+                    
+                    # Convert to a plotly object
+                    ggplotly(plot_guest_stars, tooltip="text") %>%
+                        config(displayModeBar = F) %>%
+                        layout(title = list(text = paste0("Average Episode Rating of<br>Most Popular Guest Stars",
+                                                          "<br>",
+                                                          "<sup>",
+                                                          "Seasons ", input$season[1], " Through ", input$season[2],
+                                                          "</sup>")),
+                               margin=list(t=90))
+                } 
+                # Seasons are equal
+                else {
+                    # Convert to a plotly object
+                    ggplotly(plot_guest_stars, tooltip="text") %>%
+                        config(displayModeBar = F) %>%
+                        layout(title = list(text = paste0("Average Episode Rating of<br>Most Popular Guest Stars",
+                                                          "<br>",
+                                                          "<sup>",
+                                                          "Season ", input$season[1],
+                                                          "</sup>")),
+                               margin=list(t=90))
+                }
+            }
+            # Plot popularity (least)
+            else if (input$extratype == "popular_least") {
+                
+                # Combine rows of same popularity and filter bottom 12
+                tmp_guest_star_data <- tmp_guest_star_data %>% 
+                    group_by(average_ratings) %>%
+                    mutate(all_guests_of_rating = paste0(guest_name, collapse = "\n- ")) %>%
+                    ungroup() %>%
+                    select(all_guests_of_rating, average_ratings) %>%
+                    distinct() %>%
+                    top_n(n=-12, wt=average_ratings)
+                
+                # Add to plot                
+                plot_guest_stars <- ggplot(tmp_guest_star_data) +
+                    geom_bar(aes(x=reorder(all_guests_of_rating, average_ratings), y=average_ratings,
+                                 text=paste0("Guests:<br>- ", all_guests_of_rating,
+                                             "<br>Average Episode Rating of Guest Star: ", average_ratings)), 
+                             stat="identity") +
+                    labs(x="Guest Star", y="Average Episode Rating of Guest Star", caption="Source: TMDb Database") +
+                    theme(axis.text.x=element_blank())
+                
+                # ADJUST TITLE
+                # Seasons are not equal
+                if (input$season[1] != input$season[2]) {
+                    
+                    # Convert to a plotly object
+                    ggplotly(plot_guest_stars, tooltip="text") %>%
+                        config(displayModeBar = F) %>%
+                        layout(title = list(text = paste0("Average Episode Rating of<br>Most Popular Guest Stars",
+                                                          "<br>",
+                                                          "<sup>",
+                                                          "Seasons ", input$season[1], " Through ", input$season[2],
+                                                          "</sup>")),
+                               margin=list(t=90))
+                } 
+                # Seasons are equal
+                else {
+                    # Convert to a plotly object
+                    ggplotly(plot_guest_stars, tooltip="text") %>%
+                        config(displayModeBar = F) %>%
+                        layout(title = list(text = paste0("Average Episode Rating of<br>Most Popular Guest Stars",
+                                                          "<br>",
+                                                          "<sup>",
+                                                          "Season ", input$season[1],
+                                                          "</sup>")),
+                               margin=list(t=90))
+                }
+            } 
+            # Plot frequency
+            else if (input$extratype == "frequency") {
+                
+                # Filter data
+                tmp_guest_star_data <- tmp_guest_star_data %>% 
+                    top_n(15, wt=total_appearances)
+                
+                # Add to plot                
+                plot_guest_stars <- ggplot(tmp_guest_star_data) +
+                    geom_bar(aes(x=reorder(guest_name, -total_appearances), y=total_appearances,
+                             text=paste("Name:", guest_name,
+                                        "<br>Total Appearances:", total_appearances, 
+                                        "<br>Average Episode Rating:", average_ratings)), 
+                         stat="identity") +
+                    labs(x="Guest Star", y="Total Appearances", caption="Source: TMDb Database") +
+                    theme(axis.text.x=element_blank())
+                
+                # ADJUST TITLE
+                # Seasons are not equal
+                if (input$season[1] != input$season[2]) {
+                    
+                    # Convert to a plotly object
+                    ggplotly(plot_guest_stars, tooltip="text") %>%
+                        config(displayModeBar = F) %>%
+                        layout(title = list(text = paste0("Total Frequency of Guest Stars",
+                                                          "<br>",
+                                                          "<sup>",
+                                                          "Seasons ", input$season[1], " Through ", input$season[2],
+                                                          "</sup>")),
+                               margin=list(t=75))
+                } 
+                # Seasons are equal
+                else {
+                    # Convert to a plotly object
+                    ggplotly(plot_guest_stars, tooltip="text") %>%
+                        config(displayModeBar = F) %>%
+                        layout(title = list(text = paste0("Total Frequency of Guest Stars",
+                                                          "<br>",
+                                                          "<sup>",
+                                                          "Season ", input$season[1],
+                                                          "</sup>")),
+                               margin=list(t=75))
+                }
+            }
+
+                
+            # Plot BOTH
+            else {
+                # Add to plot                
+                plot_guest_stars <- ggplot(tmp_guest_star_data) +
+                    geom_jitter(aes(x=total_appearances, y=average_ratings,
+                                 text=paste("Name:", guest_name,
+                                            "<br>Total Appearances:", total_appearances, 
+                                            "<br>Average Episode Rating:", average_ratings)), 
+                             stat="identity", size=0.5, alpha=0.3, color="blue") +
+                    labs(x="Total Appearances", y="Average Ratings", caption="Source: TMDb Database") +
+                    coord_flip()
+                
+                # ADJUST TITLE
+                # Seasons are not equal
+                if (input$season[1] != input$season[2]) {
+                    
+                    # Convert to a plotly object
+                    ggplotly(plot_guest_stars, tooltip="text") %>%
+                        config(displayModeBar = F) %>%
+                        layout(title = list(text = paste0("Frequency vs. Popularity of Guest Stars",
+                                                          "<br>",
+                                                          "<sup>",
+                                                          "Seasons ", input$season[1], " Through ", input$season[2],
+                                                          "</sup>")),
+                               margin=list(t=75))
+                } 
+                # Seasons are equal
+                else {
+                    # Convert to a plotly object
+                    ggplotly(plot_guest_stars, tooltip="text") %>%
+                        config(displayModeBar = F) %>%
+                        layout(title = list(text = paste0("Frequency vs. Popularity of Guest Stars",
+                                                          "<br>",
+                                                          "<sup>",
+                                                          "Season ", input$season[1],
+                                                          "</sup>")),
+                               margin=list(t=75))
+                }
+            } 
+        # ====================================== 5.) Create a plot comparing writers per season
+        } else if (input$plottype == "writers_extra") {
+            
+            # Create an on-the-fly dataset for finding the top viewers per season
+            tmp_writer_data <- subset(simpsons_episodes, season_number >= input$season[1] & 
+                                              season_number <= input$season[2]) %>%
+                filter(job=="Writer") %>%
+                select(crew_name, episode_title, imdb_rating) %>%
+                distinct() %>% 
+                group_by(crew_name) %>%
+                summarize(total_appearances = n(),
+                          average_ratings = round(mean(imdb_rating),digits=2)) %>%
+                drop_na()
+            
+            # Create the basic plot structure
+            plot_writers <- NULL
+            
+            #  Plot popularity (most)
+            if (input$extratype == "popular_most") {
+                
+                # Combine rows of same popularity and filter top 12
+                tmp_writer_data <- tmp_writer_data %>% 
+                    group_by(average_ratings) %>%
+                    mutate(all_writers_of_rating = paste0(crew_name, collapse = "\n- ")) %>%
+                    ungroup() %>%
+                    select(all_writers_of_rating, average_ratings) %>%
+                    distinct() %>%
+                    top_n(n=12, wt=average_ratings)
+                
+                # Add to plot                
+                plot_writers <- ggplot(tmp_writer_data) +
+                    geom_bar(aes(x=reorder(all_writers_of_rating, -average_ratings), y=average_ratings,
+                                 text=paste0("Writers:<br>- ", all_writers_of_rating,
+                                             "<br>Average Episode Rating of Writer: ", average_ratings)), 
+                             stat="identity") +
+                    labs(x="Writer", y="Average Episode Rating of Writer", caption="Source: TMDb Database") +
+                    theme(axis.text.x=element_blank())
+                
+                # ADJUST TITLE
+                # Seasons are not equal
+                if (input$season[1] != input$season[2]) {
+                    
+                    # Convert to a plotly object
+                    ggplotly(plot_writers, tooltip="text") %>%
+                        config(displayModeBar = F) %>%
+                        layout(title = list(text = paste0("Average Episode Rating of<br>Most Popular Writers",
+                                                          "<br>",
+                                                          "<sup>",
+                                                          "Seasons ", input$season[1], " Through ", input$season[2],
+                                                          "</sup>")),
+                               margin=list(t=90))
+                } 
+                # Seasons are equal
+                else {
+                    # Convert to a plotly object
+                    ggplotly(plot_writers, tooltip="text") %>%
+                        config(displayModeBar = F) %>%
+                        layout(title = list(text = paste0("Average Episode Rating of<br>Most Popular Writers",
+                                                          "<br>",
+                                                          "<sup>",
+                                                          "Season ", input$season[1],
+                                                          "</sup>")),
+                               margin=list(t=90))
+                }
+            }
+            # Plot popularity (least)
+            else if (input$extratype == "popular_least") {
+                
+                # Combine rows of same popularity and filter bottom 12
+                tmp_writer_data <- tmp_writer_data %>% 
+                    group_by(average_ratings) %>%
+                    mutate(all_writers_of_rating = paste0(crew_name, collapse = "\n- ")) %>%
+                    ungroup() %>%
+                    select(all_writers_of_rating, average_ratings) %>%
+                    distinct() %>%
+                    top_n(n=-12, wt=average_ratings)
+                
+                # Add to plot                
+                plot_writers <- ggplot(tmp_writer_data) +
+                    geom_bar(aes(x=reorder(all_writers_of_rating, average_ratings), y=average_ratings,
+                                 text=paste0("Writers:<br>- ", all_writers_of_rating,
+                                             "<br>Average Episode Rating of Writer: ", average_ratings)), 
+                             stat="identity") +
+                    labs(x="Writer", y="Average Episode Rating of Writer", caption="Source: TMDb Database") +
+                    theme(axis.text.x=element_blank())
+                
+                # ADJUST TITLE
+                # Seasons are not equal
+                if (input$season[1] != input$season[2]) {
+                    
+                    # Convert to a plotly object
+                    ggplotly(plot_writers, tooltip="text") %>%
+                        config(displayModeBar = F) %>%
+                        layout(title = list(text = paste0("Average Episode Rating of<br>Most Popular Writers",
+                                                          "<br>",
+                                                          "<sup>",
+                                                          "Seasons ", input$season[1], " Through ", input$season[2],
+                                                          "</sup>")),
+                               margin=list(t=90))
+                } 
+                # Seasons are equal
+                else {
+                    # Convert to a plotly object
+                    ggplotly(plot_writers, tooltip="text") %>%
+                        config(displayModeBar = F) %>%
+                        layout(title = list(text = paste0("Average Episode Rating of<br>Most Popular Writers",
+                                                          "<br>",
+                                                          "<sup>",
+                                                          "Season ", input$season[1],
+                                                          "</sup>")),
+                               margin=list(t=90))
+                }
+            } 
+            # Plot frequency
+            else if (input$extratype == "frequency") {
+                
+                # Filter data
+                tmp_writer_data <- tmp_writer_data %>% 
+                    top_n(15, wt=total_appearances)
+                
+                # Add to plot                
+                plot_writer <- ggplot(tmp_writer_data) +
+                    geom_bar(aes(x=reorder(crew_name, -total_appearances), y=total_appearances,
+                                 text=paste("Name:", crew_name,
+                                            "<br>Total Appearances:", total_appearances, 
+                                            "<br>Average Episode Rating:", average_ratings)), 
+                             stat="identity") +
+                    labs(x="Writer", y="Total Appearances", caption="Source: TMDb Database") +
+                    theme(axis.text.x=element_blank())
+                
+                # ADJUST TITLE
+                # Seasons are not equal
+                if (input$season[1] != input$season[2]) {
+                    
+                    # Convert to a plotly object
+                    ggplotly(plot_writer, tooltip="text") %>%
+                        config(displayModeBar = F) %>%
+                        layout(title = list(text = paste0("Total Frequency of Writers",
+                                                          "<br>",
+                                                          "<sup>",
+                                                          "Seasons ", input$season[1], " Through ", input$season[2],
+                                                          "</sup>")),
+                               margin=list(t=75))
+                } 
+                # Seasons are equal
+                else {
+                    # Convert to a plotly object
+                    ggplotly(plot_writer, tooltip="text") %>%
+                        config(displayModeBar = F) %>%
+                        layout(title = list(text = paste0("Total Frequency of Writers",
+                                                          "<br>",
+                                                          "<sup>",
+                                                          "Season ", input$season[1],
+                                                          "</sup>")),
+                               margin=list(t=75))
+                }
+            }
+            
+            
+            # Plot BOTH
+            else {
+                # Add to plot                
+                plot_writer <- ggplot(tmp_writer_data) +
+                    geom_jitter(aes(x=total_appearances, y=average_ratings,
+                                    text=paste("Name:", crew_name,
+                                               "<br>Total Appearances:", total_appearances, 
+                                               "<br>Average Episode Rating:", average_ratings)), 
+                                stat="identity", size=0.5, alpha=0.3, color="blue") +
+                    labs(x="Total Appearances", y="Average Ratings", caption="Source: TMDb Database") +
+                    coord_flip()
+                
+                # ADJUST TITLE
+                # Seasons are not equal
+                if (input$season[1] != input$season[2]) {
+                    
+                    # Convert to a plotly object
+                    ggplotly(plot_writer, tooltip="text") %>%
+                        config(displayModeBar = F) %>%
+                        layout(title = list(text = paste0("Frequency vs. Popularity of Writers",
+                                                          "<br>",
+                                                          "<sup>",
+                                                          "Seasons ", input$season[1], " Through ", input$season[2],
+                                                          "</sup>")),
+                               margin=list(t=75))
+                } 
+                # Seasons are equal
+                else {
+                    # Convert to a plotly object
+                    ggplotly(plot_writer, tooltip="text") %>%
+                        config(displayModeBar = F) %>%
+                        layout(title = list(text = paste0("Frequency vs. Popularity of Writers",
+                                                          "<br>",
+                                                          "<sup>",
+                                                          "Season ", input$season[1],
+                                                          "</sup>")),
+                               margin=list(t=75))
+                }
+            } 
+        # ====================================== 6.) Create a plot comparing directors per season
+        } else if (input$plottype == "directors_extra") {
+            
+            # Create an on-the-fly dataset for finding the top viewers per season
+            tmp_director_data <- subset(simpsons_episodes, season_number >= input$season[1] & 
+                                          season_number <= input$season[2]) %>%
+                filter(job=="Director") %>%
+                select(crew_name, episode_title, imdb_rating) %>%
+                distinct() %>% 
+                group_by(crew_name) %>%
+                summarize(total_appearances = n(),
+                          average_ratings = round(mean(imdb_rating),digits=2)) %>%
+                drop_na()
+            
+            # Create the basic plot structure
+            plot_directors <- NULL
+            
+            #  Plot popularity (most)
+            if (input$extratype == "popular_most") {
+                
+                # Combine rows of same popularity and filter top 12
+                tmp_director_data <- tmp_director_data %>% 
+                    group_by(average_ratings) %>%
+                    mutate(all_directors_of_rating = paste0(crew_name, collapse = "\n- ")) %>%
+                    ungroup() %>%
+                    select(all_directors_of_rating, average_ratings) %>%
+                    distinct() %>%
+                    top_n(n=12, wt=average_ratings)
+                
+                # Add to plot                
+                plot_directors <- ggplot(tmp_director_data) +
+                    geom_bar(aes(x=reorder(all_directors_of_rating, -average_ratings), y=average_ratings,
+                                 text=paste0("directors:<br>- ", all_directors_of_rating,
+                                             "<br>Average Episode Rating of director: ", average_ratings)), 
+                             stat="identity") +
+                    labs(x="director", y="Average Episode Rating of director", caption="Source: TMDb Database") +
+                    theme(axis.text.x=element_blank())
+                
+                # ADJUST TITLE
+                # Seasons are not equal
+                if (input$season[1] != input$season[2]) {
+                    
+                    # Convert to a plotly object
+                    ggplotly(plot_directors, tooltip="text") %>%
+                        config(displayModeBar = F) %>%
+                        layout(title = list(text = paste0("Average Episode Rating of<br>Most Popular directors",
+                                                          "<br>",
+                                                          "<sup>",
+                                                          "Seasons ", input$season[1], " Through ", input$season[2],
+                                                          "</sup>")),
+                               margin=list(t=90))
+                } 
+                # Seasons are equal
+                else {
+                    # Convert to a plotly object
+                    ggplotly(plot_directors, tooltip="text") %>%
+                        config(displayModeBar = F) %>%
+                        layout(title = list(text = paste0("Average Episode Rating of<br>Most Popular directors",
+                                                          "<br>",
+                                                          "<sup>",
+                                                          "Season ", input$season[1],
+                                                          "</sup>")),
+                               margin=list(t=90))
+                }
+            }
+            # Plot popularity (least)
+            else if (input$extratype == "popular_least") {
+                
+                # Combine rows of same popularity and filter bottom 12
+                tmp_director_data <- tmp_director_data %>% 
+                    group_by(average_ratings) %>%
+                    mutate(all_directors_of_rating = paste0(crew_name, collapse = "\n- ")) %>%
+                    ungroup() %>%
+                    select(all_directors_of_rating, average_ratings) %>%
+                    distinct() %>%
+                    top_n(n=-12, wt=average_ratings)
+                
+                # Add to plot                
+                plot_directors <- ggplot(tmp_director_data) +
+                    geom_bar(aes(x=reorder(all_directors_of_rating, average_ratings), y=average_ratings,
+                                 text=paste0("directors:<br>- ", all_directors_of_rating,
+                                             "<br>Average Episode Rating of director: ", average_ratings)), 
+                             stat="identity") +
+                    labs(x="director", y="Average Episode Rating of director", caption="Source: TMDb Database") +
+                    theme(axis.text.x=element_blank())
+                
+                # ADJUST TITLE
+                # Seasons are not equal
+                if (input$season[1] != input$season[2]) {
+                    
+                    # Convert to a plotly object
+                    ggplotly(plot_directors, tooltip="text") %>%
+                        config(displayModeBar = F) %>%
+                        layout(title = list(text = paste0("Average Episode Rating of<br>Most Popular directors",
+                                                          "<br>",
+                                                          "<sup>",
+                                                          "Seasons ", input$season[1], " Through ", input$season[2],
+                                                          "</sup>")),
+                               margin=list(t=90))
+                } 
+                # Seasons are equal
+                else {
+                    # Convert to a plotly object
+                    ggplotly(plot_directors, tooltip="text") %>%
+                        config(displayModeBar = F) %>%
+                        layout(title = list(text = paste0("Average Episode Rating of<br>Most Popular directors",
+                                                          "<br>",
+                                                          "<sup>",
+                                                          "Season ", input$season[1],
+                                                          "</sup>")),
+                               margin=list(t=90))
+                }
+            } 
+            # Plot frequency
+            else if (input$extratype == "frequency") {
+                
+                # Filter data
+                tmp_director_data <- tmp_director_data %>% 
+                    top_n(15, wt=total_appearances)
+                
+                # Add to plot                
+                plot_director <- ggplot(tmp_director_data) +
+                    geom_bar(aes(x=reorder(crew_name, -total_appearances), y=total_appearances,
+                                 text=paste("Name:", crew_name,
+                                            "<br>Total Appearances:", total_appearances, 
+                                            "<br>Average Episode Rating:", average_ratings)), 
+                             stat="identity") +
+                    labs(x="director", y="Total Appearances", caption="Source: TMDb Database") +
+                    theme(axis.text.x=element_blank())
+                
+                # ADJUST TITLE
+                # Seasons are not equal
+                if (input$season[1] != input$season[2]) {
+                    
+                    # Convert to a plotly object
+                    ggplotly(plot_director, tooltip="text") %>%
+                        config(displayModeBar = F) %>%
+                        layout(title = list(text = paste0("Total Frequency of directors",
+                                                          "<br>",
+                                                          "<sup>",
+                                                          "Seasons ", input$season[1], " Through ", input$season[2],
+                                                          "</sup>")),
+                               margin=list(t=75))
+                } 
+                # Seasons are equal
+                else {
+                    # Convert to a plotly object
+                    ggplotly(plot_director, tooltip="text") %>%
+                        config(displayModeBar = F) %>%
+                        layout(title = list(text = paste0("Total Frequency of directors",
+                                                          "<br>",
+                                                          "<sup>",
+                                                          "Season ", input$season[1],
+                                                          "</sup>")),
+                               margin=list(t=75))
+                }
+            }
+            
+            
+            # Plot BOTH
+            else {
+                # Add to plot                
+                plot_director <- ggplot(tmp_director_data) +
+                    geom_jitter(aes(x=total_appearances, y=average_ratings,
+                                    text=paste("Name:", crew_name,
+                                               "<br>Total Appearances:", total_appearances, 
+                                               "<br>Average Episode Rating:", average_ratings)), 
+                                stat="identity", size=0.5, alpha=0.3, color="blue") +
+                    labs(x="Total Appearances", y="Average Ratings", caption="Source: TMDb Database") +
+                    coord_flip()
+                
+                # ADJUST TITLE
+                # Seasons are not equal
+                if (input$season[1] != input$season[2]) {
+                    
+                    # Convert to a plotly object
+                    ggplotly(plot_director, tooltip="text") %>%
+                        config(displayModeBar = F) %>%
+                        layout(title = list(text = paste0("Frequency vs. Popularity of directors",
+                                                          "<br>",
+                                                          "<sup>",
+                                                          "Seasons ", input$season[1], " Through ", input$season[2],
+                                                          "</sup>")),
+                               margin=list(t=75))
+                } 
+                # Seasons are equal
+                else {
+                    # Convert to a plotly object
+                    ggplotly(plot_director, tooltip="text") %>%
+                        config(displayModeBar = F) %>%
+                        layout(title = list(text = paste0("Frequency vs. Popularity of directors",
+                                                          "<br>",
+                                                          "<sup>",
+                                                          "Season ", input$season[1],
+                                                          "</sup>")),
+                               margin=list(t=75))
+                }
+            }
         }
 
     })
