@@ -21,8 +21,6 @@ library(plotly)
 # ====================================================== 2.) Load Datasets
 # Load the simpsons dataset
 load("Simpsons_Episodes.RData")
-load("Simpsons_Episodes_Guest_Stars.RData")
-load("Simpsons_Episodes_Crew.RData")
 
 
 # ====================================================== 3.) Data Handling

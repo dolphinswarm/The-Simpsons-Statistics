@@ -115,6 +115,4 @@ simpsons_episodes <- episodes %>%
 
 # ====================================================== 4.) Save Data
 # Save the dataset
-save(guest_stars, file="Simpsons_Episodes_Guest_Stars.RData")
-save(crew, file="Simpsons_Episodes_Crew.RData")
 save(simpsons_episodes, file="Simpsons_Episodes.RData")
