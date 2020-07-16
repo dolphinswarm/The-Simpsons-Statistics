@@ -16,6 +16,7 @@ library(shiny)
 library(tidyverse)
 require(forcats)
 library(plotly)
+library(shinyWidgets)
 
 
 # ====================================================== 2.) Load Datasets
@@ -47,9 +48,12 @@ extra_types <-c("Most Popular" = "popular_most",
 # UI #
 ######
 ui <- fluidPage(
+    
+    # Redo themes
+    setBackgroundColor("skyblue"),
 
     # Application title
-    titlePanel(title="The Simpsons In Statistics"),
+    titlePanel(title=div(img(src="title.png", width=200), "In Statistics")),
     
     # Subtitles
     headerPanel(title="Brad Schmitz - STA 404 Final Project"),
