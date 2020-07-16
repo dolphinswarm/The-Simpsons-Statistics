@@ -1,0 +1,10 @@
+name: the-simpsons-statistics
+title:
+username:
+account: dolphinswarm
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 2577288
+bundleId: 3397658
+url: https://dolphinswarm.shinyapps.io/the-simpsons-statistics/
+when: 1594860816.82397
